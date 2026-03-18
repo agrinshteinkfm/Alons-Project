@@ -9,25 +9,21 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_claims_phone_unique ON claims_log (phone_n
 -- 2. Index on vouchers.claimed_by for fast phone lookups
 CREATE INDEX IF NOT EXISTS idx_vouchers_claimed_by ON vouchers (claimed_by) WHERE claimed_by IS NOT NULL;
 
--- 3. Replace the claim function — now checks if phone already claimed INSIDE the transaction
+-- 3. Replace the claim function — advisory lock serializes by phone number
+--    This prevents parallel webhook deliveries from claiming multiple vouchers
 CREATE OR REPLACE FUNCTION claim_next_voucher(claimer_phone text)
 RETURNS vouchers AS $$
 DECLARE
   v vouchers;
-  existing vouchers;
 BEGIN
-  -- First check if this phone already has a voucher (inside the transaction)
-  SELECT * INTO existing
-  FROM vouchers
-  WHERE claimed_by = claimer_phone
-  LIMIT 1;
+  -- Force all concurrent requests for the same phone to wait in line
+  PERFORM pg_advisory_xact_lock(hashtext(claimer_phone));
 
-  IF existing.id IS NOT NULL THEN
-    -- Already claimed — return NULL to signal "no new claim"
+  -- Now safe to check — no other transaction for this phone can be running
+  IF EXISTS (SELECT 1 FROM vouchers WHERE claimed_by = claimer_phone) THEN
     RETURN NULL;
   END IF;
 
-  -- Select and lock the first unclaimed voucher
   SELECT * INTO v
   FROM vouchers
   WHERE claimed = false
@@ -39,7 +35,6 @@ BEGIN
     RETURN NULL;
   END IF;
 
-  -- Mark as claimed
   UPDATE vouchers
   SET claimed = true,
       claimed_by = claimer_phone,
