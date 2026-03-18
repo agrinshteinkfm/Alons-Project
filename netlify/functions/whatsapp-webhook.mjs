@@ -7,7 +7,8 @@ const supabase = createClient(
 
 const DIALOG_API_KEY = process.env.DIALOG_API_KEY
 const DEAL_IMAGE_URL = process.env.DEAL_IMAGE_URL
-const DIALOG_API_URL = 'https://waba.360dialog.io/v1/messages'
+// Try Cloud API v2 endpoint first; fall back with DIALOG_API_URL env var if needed
+const DIALOG_API_URL = process.env.DIALOG_API_URL || 'https://waba-v2.360dialog.io/messages'
 
 async function sendWhatsApp(to, body) {
   const payload = {
