@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cd \"/c/Users/Admin/Documents/My Life/Projects/Alons Project\" && mkdir -p src/pages src/components src/lib netlify/functions public)",
+      "Bash(cd \"/c/Users/Admin/Documents/My Life/Projects/Alons Project\" && npm install)"
+    ]
+  }
+}
