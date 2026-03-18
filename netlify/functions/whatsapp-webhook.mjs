@@ -146,8 +146,11 @@ export async function handler(event) {
         .limit(1)
         .maybeSingle()
 
+      console.log('Claim check result - data:', JSON.stringify(existingClaim), 'error:', JSON.stringify(claimCheckError))
+
       if (claimCheckError) {
         console.error('Error checking existing claim:', claimCheckError)
+        // Don't block on error — continue to try claiming
       }
 
       if (existingClaim) {
