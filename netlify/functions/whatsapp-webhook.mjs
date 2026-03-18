@@ -8,6 +8,7 @@ const supabase = createClient(
 const DIALOG_API_KEY = process.env.DIALOG_API_KEY
 const DEAL_IMAGE_URL = process.env.DEAL_IMAGE_URL
 const DIALOG_API_URL = process.env.DIALOG_API_URL || 'https://waba-v2.360dialog.io/messages'
+const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET // optional: shared secret for webhook auth
 
 const VOUCHER_MESSAGE = (wicode) => `Congratulations on claiming your deal at KFC! Your Wicode details are:
 
@@ -33,9 +34,6 @@ https://maps.app.goo.gl/WmQVUhB3MUdca39u8?g_st=ic
 Give this wiCode to the cashier when buying 10 Zinger Wings or 10 Dunked Wings, or use at the self-service kiosk. Ask the lobby host for assistance.
 
 It's finger lickin' good.`
-
-// Track processed message IDs in memory to handle rapid duplicate webhooks
-const processedMessages = new Set()
 
 async function sendWhatsApp(to, body) {
   const res = await fetch(DIALOG_API_URL, {
@@ -87,14 +85,11 @@ function extractMessage(payload) {
     const msg = payload.messages[0]
     return { from: msg.from, text: (msg.text?.body || '').trim(), messageId: msg.id }
   }
-  if (payload?.contacts && payload?.messages) {
-    const msg = payload.messages[0]
-    return { from: msg.from || payload.contacts[0]?.wa_id, text: (msg.text?.body || '').trim(), messageId: msg.id }
-  }
   return null
 }
 
 export async function handler(event) {
+  // --- Webhook verification (GET) ---
   if (event.httpMethod === 'GET') {
     const params = event.queryStringParameters || {}
     if (params['hub.mode'] === 'subscribe' && params['hub.challenge']) {
@@ -103,139 +98,99 @@ export async function handler(event) {
     return { statusCode: 403, body: 'Forbidden' }
   }
 
-  if (event.httpMethod === 'POST') {
-    try {
-      const payload = JSON.parse(event.body)
-      const message = extractMessage(payload)
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method Not Allowed' }
+  }
 
-      if (!message) {
-        return { statusCode: 200, body: 'OK' }
-      }
+  // --- Optional webhook authentication ---
+  if (WEBHOOK_SECRET) {
+    const authHeader = event.headers['x-webhook-secret'] || event.headers['X-Webhook-Secret']
+    if (authHeader !== WEBHOOK_SECRET) {
+      console.log('Unauthorized webhook request')
+      return { statusCode: 401, body: 'Unauthorized' }
+    }
+  }
 
-      const { from, text, messageId } = message
-      console.log(`Message from ${from}: "${text}" (id: ${messageId})`)
+  try {
+    const payload = JSON.parse(event.body)
+    const message = extractMessage(payload)
 
-      // --- DEDUP: in-memory guard for rapid duplicate webhooks ---
-      if (messageId) {
-        if (processedMessages.has(messageId)) {
-          console.log('Duplicate webhook (in-memory), skipping:', messageId)
-          return { statusCode: 200, body: 'OK' }
-        }
-        processedMessages.add(messageId)
-        // Clean up old entries to prevent memory leak
-        if (processedMessages.size > 1000) {
-          const first = processedMessages.values().next().value
-          processedMessages.delete(first)
-        }
-      }
+    if (!message) {
+      return { statusCode: 200, body: 'OK' }
+    }
 
-      // --- DEDUP: check DB for message ID (cross-instance) ---
-      if (messageId) {
-        const { data: existingMsg } = await supabase
-          .from('claims_log')
-          .select('id')
-          .eq('message_id', messageId)
-          .limit(1)
-          .maybeSingle()
+    const { from, text, messageId } = message
+    console.log(`Message from ${from}: "${text}" (id: ${messageId})`)
 
-        if (existingMsg) {
-          console.log('Duplicate webhook (DB), skipping:', messageId)
-          return { statusCode: 200, body: 'OK' }
-        }
-      }
+    // --- Not a WINGS message — send instructions ---
+    if (!/wings/i.test(text)) {
+      await sendWhatsApp(
+        from,
+        '🍗 Welcome to the KFC Wings deal!\n\nSend the word *WINGS* to claim your exclusive voucher.'
+      )
+      return { statusCode: 200, body: 'OK' }
+    }
 
-      // Not a WINGS message — send instructions
-      if (!/wings/i.test(text)) {
-        await sendWhatsApp(
-          from,
-          '🍗 Welcome to the KFC Wings deal!\n\nSend the word *WINGS* to claim your exclusive voucher.'
-        )
-        return { statusCode: 200, body: 'OK' }
-      }
+    // --- Claim voucher via RPC (atomic: checks phone + locks + claims in one transaction) ---
+    console.log('Claiming voucher for', from)
+    const { data: voucher, error: voucherError } = await supabase
+      .rpc('claim_next_voucher', { claimer_phone: from })
 
-      // --- Check if phone already claimed (using vouchers table — written atomically by RPC) ---
-      const { data: alreadyClaimed } = await supabase
+    if (voucherError) {
+      console.error('RPC error:', voucherError.message)
+    }
+
+    // RPC returns NULL if phone already claimed OR no vouchers left
+    if (!voucher) {
+      // Determine which case: already claimed or out of stock
+      const { data: existingVoucher } = await supabase
         .from('vouchers')
         .select('wicode')
         .eq('claimed_by', from)
         .limit(1)
         .maybeSingle()
 
-      if (alreadyClaimed) {
-        console.log('Phone already claimed (vouchers table), sending notice')
+      if (existingVoucher) {
+        console.log('Phone already claimed:', from)
         await sendWhatsApp(
           from,
           "You've already claimed your KFC Wings deal! 🎉\n\nEnjoy your meal!"
         )
-        return { statusCode: 200, body: 'OK' }
+      } else {
+        console.log('No vouchers remaining')
+        await sendWhatsApp(
+          from,
+          'Sorry, all vouchers have been claimed! 😔\n\nStay tuned for more KFC deals.'
+        )
       }
-
-      // --- Claim next voucher atomically ---
-      console.log('Claiming voucher for', from)
-      const { data: voucher, error: voucherError } = await supabase
-        .rpc('claim_next_voucher', { claimer_phone: from })
-
-      let claimedVoucher = voucher
-
-      if (voucherError || !voucher) {
-        console.log('RPC failed, trying fallback. Error:', voucherError?.message)
-
-        // Check again if another instance already claimed for this phone (race condition)
-        const { data: raceCheck } = await supabase
-          .from('vouchers')
-          .select('wicode')
-          .eq('claimed_by', from)
-          .limit(1)
-          .maybeSingle()
-
-        if (raceCheck) {
-          console.log('Race condition resolved — voucher already claimed by parallel request')
-          return { statusCode: 200, body: 'OK' }
-        }
-
-        const { data: available } = await supabase
-          .from('vouchers')
-          .select('id, wicode')
-          .eq('claimed', false)
-          .limit(1)
-          .maybeSingle()
-
-        if (!available) {
-          await sendWhatsApp(
-            from,
-            'Sorry, all vouchers have been claimed! 😔\n\nStay tuned for more KFC deals.'
-          )
-          return { statusCode: 200, body: 'OK' }
-        }
-
-        await supabase
-          .from('vouchers')
-          .update({ claimed: true, claimed_by: from, claimed_at: new Date().toISOString() })
-          .eq('id', available.id)
-          .eq('claimed', false)
-
-        claimedVoucher = available
-      }
-
-      const wicode = claimedVoucher.wicode || claimedVoucher
-      console.log('Voucher claimed:', wicode)
-
-      // Log the claim
-      await supabase.from('claims_log').insert({
-        phone_number: from,
-        voucher_id: claimedVoucher.id,
-        message_id: messageId,
-      })
-
-      // Send image + voucher message
-      await sendWhatsAppImage(from, DEAL_IMAGE_URL, VOUCHER_MESSAGE(wicode))
-
-      return { statusCode: 200, body: 'OK' }
-    } catch (err) {
-      console.error('Webhook error:', err.message, err.stack)
       return { statusCode: 200, body: 'OK' }
     }
-  }
 
-  return { statusCode: 405, body: 'Method Not Allowed' }
+    const wicode = voucher.wicode
+    console.log('Voucher claimed:', wicode)
+
+    // --- Log the claim (unique constraint on phone_number prevents duplicates) ---
+    const { error: insertError } = await supabase.from('claims_log').insert({
+      phone_number: from,
+      voucher_id: voucher.id,
+      message_id: messageId,
+    })
+
+    if (insertError) {
+      // Unique constraint violation = duplicate request that slipped through
+      if (insertError.code === '23505') {
+        console.log('Duplicate claim insert blocked by DB constraint, skipping reply')
+        return { statusCode: 200, body: 'OK' }
+      }
+      console.error('Claims log insert error:', insertError)
+    }
+
+    // --- Send image + voucher message ---
+    await sendWhatsAppImage(from, DEAL_IMAGE_URL, VOUCHER_MESSAGE(wicode))
+
+    return { statusCode: 200, body: 'OK' }
+  } catch (err) {
+    console.error('Webhook error:', err.message, err.stack)
+    return { statusCode: 200, body: 'OK' }
+  }
 }

@@ -36,14 +36,17 @@ export default async function handler() {
 
     const dailyClaimCount = todayClaims?.length || 0
 
-    // Total stats
-    const { data: allVouchers } = await supabase
+    // Total stats (efficient count queries instead of fetching all rows)
+    const { count: totalVouchers } = await supabase
       .from('vouchers')
-      .select('id, claimed')
+      .select('*', { count: 'exact', head: true })
 
-    const totalVouchers = allVouchers?.length || 0
-    const totalClaimed = allVouchers?.filter((v) => v.claimed).length || 0
-    const remaining = totalVouchers - totalClaimed
+    const { count: totalClaimed } = await supabase
+      .from('vouchers')
+      .select('*', { count: 'exact', head: true })
+      .eq('claimed', true)
+
+    const remaining = (totalVouchers || 0) - (totalClaimed || 0)
 
     // Format date for display
     const reportDate = startOfDaySAST.toLocaleDateString('en-ZA', {
