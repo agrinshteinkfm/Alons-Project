@@ -122,6 +122,18 @@ export async function handler(event) {
     const { from, text, messageId } = message
     console.log(`Message from ${from}: "${text}" (id: ${messageId})`)
 
+    // --- DEDUP: only one of N parallel webhooks can win this insert ---
+    if (messageId) {
+      const { error: dedupError } = await supabase
+        .from('message_dedup')
+        .insert({ message_id: messageId })
+
+      if (dedupError) {
+        console.log('Duplicate webhook blocked by dedup table, skipping:', messageId)
+        return { statusCode: 200, body: 'OK' }
+      }
+    }
+
     // --- Not a WINGS message — send instructions ---
     if (!/wings/i.test(text)) {
       await sendWhatsApp(
