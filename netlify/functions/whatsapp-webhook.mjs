@@ -143,48 +143,60 @@ export async function handler(event) {
       return { statusCode: 200, body: 'OK' }
     }
 
-    // --- Claim voucher via RPC (atomic: checks phone + locks + claims in one transaction) ---
-    console.log('Claiming voucher for', from)
-    const { data: voucher, error: voucherError } = await supabase
-      .rpc('claim_next_voucher', { claimer_phone: from })
+    // --- Check if phone already claimed ---
+    const { data: alreadyClaimed } = await supabase
+      .from('vouchers')
+      .select('wicode')
+      .eq('claimed_by', from)
+      .limit(1)
+      .maybeSingle()
 
-    if (voucherError) {
-      console.error('RPC error:', voucherError.message)
-    }
-
-    // RPC returns NULL if phone already claimed OR no vouchers left
-    if (!voucher) {
-      // Determine which case: already claimed or out of stock
-      const { data: existingVoucher } = await supabase
-        .from('vouchers')
-        .select('wicode')
-        .eq('claimed_by', from)
-        .limit(1)
-        .maybeSingle()
-
-      if (existingVoucher) {
-        console.log('Phone already claimed:', from)
-        await sendWhatsApp(
-          from,
-          "You've already claimed your KFC Wings deal! 🎉\n\nEnjoy your meal!"
-        )
-      } else {
-        console.log('No vouchers remaining')
-        await sendWhatsApp(
-          from,
-          'Sorry, all vouchers have been claimed! 😔\n\nStay tuned for more KFC deals.'
-        )
-      }
+    if (alreadyClaimed) {
+      console.log('Phone already claimed:', from)
+      await sendWhatsApp(
+        from,
+        "You've already claimed your KFC Wings deal! 🎉\n\nEnjoy your meal!"
+      )
       return { statusCode: 200, body: 'OK' }
     }
 
-    const wicode = voucher.wicode
+    // --- Claim next unclaimed voucher directly ---
+    console.log('Claiming voucher for', from)
+    const { data: available } = await supabase
+      .from('vouchers')
+      .select('id, wicode')
+      .eq('claimed', false)
+      .limit(1)
+      .maybeSingle()
+
+    if (!available) {
+      console.log('No vouchers remaining')
+      await sendWhatsApp(
+        from,
+        'Sorry, all vouchers have been claimed! 😔\n\nStay tuned for more KFC deals.'
+      )
+      return { statusCode: 200, body: 'OK' }
+    }
+
+    // Mark as claimed
+    const { error: updateError } = await supabase
+      .from('vouchers')
+      .update({ claimed: true, claimed_by: from, claimed_at: new Date().toISOString() })
+      .eq('id', available.id)
+      .eq('claimed', false)
+
+    if (updateError) {
+      console.error('Voucher update error:', updateError)
+      return { statusCode: 200, body: 'OK' }
+    }
+
+    const wicode = available.wicode
     console.log('Voucher claimed:', wicode)
 
     // --- Log the claim (unique constraint on phone_number prevents duplicates) ---
     const { error: insertError } = await supabase.from('claims_log').insert({
       phone_number: from,
-      voucher_id: voucher.id,
+      voucher_id: available.id,
       message_id: messageId,
     })
 
