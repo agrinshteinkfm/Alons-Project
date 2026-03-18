@@ -6,7 +6,7 @@ const supabase = createClient(
 )
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const REPORT_EMAILS = ['Alon@samediaco.com', 'Aron@kfmed.co.za']
+const REPORT_EMAILS = ['Alon@samediaco.com']
 
 export const config = {
   schedule: '30 18 * * *', // Every day at 8:30 PM SAST (6:30 PM UTC)
@@ -128,7 +128,7 @@ export default async function handler() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        from: 'KFC Wings Campaign <reports@fingerlickingood.netlify.app>',
+        from: 'KFC Wings Campaign <onboarding@resend.dev>',
         to: REPORT_EMAILS,
         subject: `KFC Wings Daily Report — ${dailyClaimCount} claims on ${reportDate}`,
         html: emailHtml,
