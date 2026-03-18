@@ -121,6 +121,21 @@ export async function handler(event) {
       const { from, text, messageId } = message
       console.log(`Message from ${from}: "${text}" (id: ${messageId})`)
 
+      // Deduplicate: check if we already processed this exact message
+      if (messageId) {
+        const { data: existingMsg } = await supabase
+          .from('claims_log')
+          .select('id')
+          .eq('message_id', messageId)
+          .limit(1)
+          .maybeSingle()
+
+        if (existingMsg) {
+          console.log('Message already processed, skipping:', messageId)
+          return { statusCode: 200, body: 'OK' }
+        }
+      }
+
       // Check env vars
       console.log('DIALOG_API_KEY set:', !!DIALOG_API_KEY)
       console.log('DEAL_IMAGE_URL:', DEAL_IMAGE_URL)
