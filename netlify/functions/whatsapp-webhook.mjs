@@ -10,28 +10,30 @@ const DEAL_IMAGE_URL = process.env.DEAL_IMAGE_URL
 // Try Cloud API v2 endpoint first; fall back with DIALOG_API_URL env var if needed
 const DIALOG_API_URL = process.env.DIALOG_API_URL || 'https://waba-v2.360dialog.io/messages'
 
-const VOUCHER_MESSAGE = (wicode) => `🍗 *HERE'S YOUR KFC WINGS DEAL!*
+const VOUCHER_MESSAGE = (wicode) => `Congratulations on claiming your deal at KFC! Your Wicode details are:
 
-Your wiCode voucher: *${wicode}*
+wiCode: *${wicode}*
+Expires 30 June 2026
+Only valid at selected KFC stores, see the image for details or the store list below:
 
-Show this code at any of the KFC's below to redeem your deal:
+KFC Braamfontein
+https://maps.app.goo.gl/kdSaPNMhvz6kLif69?g_st=ic
 
-📍 *KFC Braamfontein*
-https://maps.app.goo.gl/kdSaPNMhvz6kLif69
+KFC Park Central
+https://maps.app.goo.gl/UAjFcJ2QssqMJKwH8?g_st=ic
 
-📍 *KFC Park Central*
-https://maps.app.goo.gl/UAjFcJ2QssqMJKwH8
+KFC Kensington
+https://maps.app.goo.gl/QZJbASbrBootzkzT7?g_st=ic
 
-📍 *KFC Kensington*
-https://maps.app.goo.gl/QZJbASbrBootzkzT7
+KFC Malvern
+https://maps.app.goo.gl/3FehXRtfLopQBYnU7?g_st=ic
 
-📍 *KFC Malvern*
-https://maps.app.goo.gl/3FehXRtfLopQBYnU7
+KFC Bedford Centre
+https://maps.app.goo.gl/WmQVUhB3MUdca39u8?g_st=ic
 
-📍 *KFC Bedford Centre*
-https://maps.app.goo.gl/WmQVUhB3MUdca39u8
+Give this wiCode to the cashier when buying 10 Zinger Wings or 10 Dunked Wings, or use at the self-service kiosk. Ask the lobby host for assistance.
 
-Enjoy your meal! 🎉`
+It's finger lickin' good.`
 
 async function sendWhatsApp(to, body) {
   const payload = {
