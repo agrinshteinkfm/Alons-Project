@@ -9,7 +9,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY
 const REPORT_EMAILS = ['Alon@samediaco.com', 'Aron@kfmed.co.za']
 
 export const config = {
-  schedule: '0 7 * * *', // Every day at 7:00 AM UTC
+  schedule: '30 18 * * *', // Every day at 8:30 PM SAST (6:30 PM UTC)
 }
 
 export default async function handler() {
@@ -18,30 +18,23 @@ export default async function handler() {
   try {
     // Get today's date range (UTC)
     const now = new Date()
-    const startOfDay = new Date(now)
-    startOfDay.setUTCHours(0, 0, 0, 0)
-    const endOfDay = new Date(now)
-    endOfDay.setUTCHours(23, 59, 59, 999)
+    // SAST is UTC+2 — get start of today in SAST
+    const startOfDaySAST = new Date(now)
+    startOfDaySAST.setUTCHours(-2, 0, 0, 0) // midnight SAST = 22:00 UTC previous day
 
-    // Yesterday's range for the report
-    const startOfYesterday = new Date(startOfDay)
-    startOfYesterday.setUTCDate(startOfYesterday.getUTCDate() - 1)
-    const endOfYesterday = new Date(startOfDay)
-    endOfYesterday.setUTCMilliseconds(-1)
-
-    // Claims from yesterday
-    const { data: yesterdayClaims, error: claimsError } = await supabase
+    // Claims from today (SAST)
+    const { data: todayClaims, error: claimsError } = await supabase
       .from('claims_log')
       .select('id, phone_number, created_at, vouchers(wicode)')
-      .gte('created_at', startOfYesterday.toISOString())
-      .lte('created_at', endOfYesterday.toISOString())
+      .gte('created_at', startOfDaySAST.toISOString())
+      .lte('created_at', now.toISOString())
       .order('created_at', { ascending: false })
 
     if (claimsError) {
       console.error('Error fetching claims:', claimsError)
     }
 
-    const dailyClaimCount = yesterdayClaims?.length || 0
+    const dailyClaimCount = todayClaims?.length || 0
 
     // Total stats
     const { data: allVouchers } = await supabase
@@ -53,7 +46,7 @@ export default async function handler() {
     const remaining = totalVouchers - totalClaimed
 
     // Format date for display
-    const reportDate = startOfYesterday.toLocaleDateString('en-ZA', {
+    const reportDate = startOfDaySAST.toLocaleDateString('en-ZA', {
       weekday: 'long',
       year: 'numeric',
       month: 'long',
@@ -63,7 +56,7 @@ export default async function handler() {
     // Build claims table rows
     let claimsTableRows = ''
     if (dailyClaimCount > 0) {
-      claimsTableRows = yesterdayClaims
+      claimsTableRows = todayClaims
         .map(
           (c) =>
             `<tr>
@@ -89,7 +82,7 @@ export default async function handler() {
             <tr>
               <td style="padding:12px;background:#f8f8f8;border-radius:8px;text-align:center;width:33%">
                 <div style="font-size:28px;font-weight:bold;color:#e4002b">${dailyClaimCount}</div>
-                <div style="font-size:12px;color:#888;text-transform:uppercase">Claims Yesterday</div>
+                <div style="font-size:12px;color:#888;text-transform:uppercase">Claims Today</div>
               </td>
               <td style="width:8px"></td>
               <td style="padding:12px;background:#f8f8f8;border-radius:8px;text-align:center;width:33%">
@@ -107,7 +100,7 @@ export default async function handler() {
           ${
             dailyClaimCount > 0
               ? `
-            <h2 style="font-size:16px;color:#333">Yesterday's Claims</h2>
+            <h2 style="font-size:16px;color:#333">Today's Claims</h2>
             <table style="width:100%;border-collapse:collapse">
               <tr style="background:#e4002b;color:#fff">
                 <th style="padding:8px;text-align:left;font-size:13px">Phone</th>
@@ -117,7 +110,7 @@ export default async function handler() {
               ${claimsTableRows}
             </table>
           `
-              : '<p style="color:#888;text-align:center">No claims yesterday</p>'
+              : '<p style="color:#888;text-align:center">No claims today</p>'
           }
         </div>
 
