@@ -10,6 +10,29 @@ const DEAL_IMAGE_URL = process.env.DEAL_IMAGE_URL
 // Try Cloud API v2 endpoint first; fall back with DIALOG_API_URL env var if needed
 const DIALOG_API_URL = process.env.DIALOG_API_URL || 'https://waba-v2.360dialog.io/messages'
 
+const VOUCHER_MESSAGE = (wicode) => `🍗 *HERE'S YOUR KFC WINGS DEAL!*
+
+Your wiCode voucher: *${wicode}*
+
+Show this code at any of the KFC's below to redeem your deal:
+
+📍 *KFC Braamfontein*
+https://maps.app.goo.gl/kdSaPNMhvz6kLif69
+
+📍 *KFC Park Central*
+https://maps.app.goo.gl/UAjFcJ2QssqMJKwH8
+
+📍 *KFC Kensington*
+https://maps.app.goo.gl/QZJbASbrBootzkzT7
+
+📍 *KFC Malvern*
+https://maps.app.goo.gl/3FehXRtfLopQBYnU7
+
+📍 *KFC Bedford Centre*
+https://maps.app.goo.gl/WmQVUhB3MUdca39u8
+
+Enjoy your meal! 🎉`
+
 async function sendWhatsApp(to, body) {
   const payload = {
     messaging_product: 'whatsapp',
@@ -241,7 +264,7 @@ export async function handler(event) {
         await sendWhatsAppImage(
           from,
           DEAL_IMAGE_URL,
-          `🍗 HERE'S YOUR KFC WINGS DEAL!\n\nYour wiCode voucher: *${available.wicode}*\n\nShow this code at any KFC to redeem your deal. Enjoy! 🎉`
+          VOUCHER_MESSAGE(available.wicode)
         )
 
         return { statusCode: 200, body: 'OK' }
@@ -262,7 +285,7 @@ export async function handler(event) {
       await sendWhatsAppImage(
         from,
         DEAL_IMAGE_URL,
-        `🍗 HERE'S YOUR KFC WINGS DEAL!\n\nYour wiCode voucher: *${claimedCode}*\n\nShow this code at any KFC to redeem your deal. Enjoy! 🎉`
+        VOUCHER_MESSAGE(claimedCode)
       )
 
       return { statusCode: 200, body: 'OK' }
