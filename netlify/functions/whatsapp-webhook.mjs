@@ -122,6 +122,11 @@ export async function handler(event) {
     const { from, text, messageId } = message
     console.log(`Message from ${from}: "${text}" (id: ${messageId})`)
 
+    if (from === '27675441297') {
+      console.log('Ignoring echo message from the bot.')
+      return { statusCode: 200, body: 'OK' }
+    }
+
     // --- DEDUP: only one of N parallel webhooks can win this insert ---
     if (messageId) {
       const { error: dedupError } = await supabase
