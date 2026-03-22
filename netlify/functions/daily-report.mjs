@@ -6,7 +6,7 @@ const supabase = createClient(
 )
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
-const REPORT_EMAILS = ['Alon@samediaco.com']
+const REPORT_EMAILS = ['aron@kfmed.co.za']
 
 export const config = {
   schedule: '30 18 * * *', // Every day at 8:30 PM SAST (6:30 PM UTC)
