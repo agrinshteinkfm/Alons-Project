@@ -128,6 +128,11 @@ export async function handler(event) {
         .from('message_dedup')
         .insert({ message_id: messageId })
 
+      if (from === '27675441297') {
+      console.log('Ignoring echo message from the bot.')
+      return { statusCode: 200, body: 'OK' }
+    }
+
       if (dedupError) {
         console.log('Duplicate webhook blocked by dedup table, skipping:', messageId)
         return { statusCode: 200, body: 'OK' }
